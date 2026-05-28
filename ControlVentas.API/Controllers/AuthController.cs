@@ -21,6 +21,13 @@ namespace ControlVentas.API.Controllers
         public string Email { get; set; } = null!;
     }
 
+    public class MenuItemDto
+    {
+        public string Texto { get; set; } = null!;
+        public string Ruta { get; set; } = null!;
+        public string Icono { get; set; } = null!;
+    }
+
     [ApiController]
     [Route("api/[controller]")]
     public class AuthController : ControllerBase
@@ -93,6 +100,44 @@ namespace ControlVentas.API.Controllers
             await _context.SaveChangesAsync();
 
             return Ok(new { mensaje = "Usuario registrado exitosamente con contraseña cifrada." });
+        }
+
+        // GET: api/auth/menu?rol=Administrador
+        [HttpGet("menu")]
+        public IActionResult ObtenetMenu([FromQuery] string rol)
+        {
+            var menu = new List<MenuItemDto>();
+
+            if (string.IsNullOrEmpty(rol))
+                return BadRequest(new { mensaje = "El rol es requerido." });
+
+            // Opciones base para TODOS los usuarios logueados
+            menu.Add(new MenuItemDto { Texto = "Inicio", Ruta = "/dashboard", Icono = "HomeIcon" });
+
+            // Filtramos de forma estricta según el rol real en tu MySQL
+            if (rol == "Administrador")
+            {
+                // El Admin mira absolutamente todo, incluyendo catálogos, personal y reportería avanzada
+                menu.Add(new MenuItemDto { Texto = "Inventario / Productos", Ruta = "/productos", Icono = "BoxIcon" });
+                menu.Add(new MenuItemDto { Texto = "Gestión de Usuarios", Ruta = "/usuarios", Icono = "UsersIcon" });
+                menu.Add(new MenuItemDto { Texto = "Clientes", Ruta = "/clientes", Icono = "UserGroupIcon" });
+                menu.Add(new MenuItemDto { Texto = "Nueva Venta", Ruta = "/ventas/nueva", Icono = "ShoppingCartIcon" });
+                menu.Add(new MenuItemDto { Texto = "Historial de Ventas", Ruta = "/ventas/historial", Icono = "DocumentTextIcon" });
+                menu.Add(new MenuItemDto { Texto = "Reportes Estadísticos", Ruta = "/reportes", Icono = "ChartBarIcon" });
+            }
+            else if (rol == "Cajero")
+            {
+                // El Cajero solo puede facturar, ver clientes y revisar el historial de lo que ha vendido
+                menu.Add(new MenuItemDto { Texto = "Nueva Venta", Ruta = "/ventas/nueva", Icono = "ShoppingCartIcon" });
+                menu.Add(new MenuItemDto { Texto = "Clientes", Ruta = "/clientes", Icono = "UserGroupIcon" });
+                menu.Add(new MenuItemDto { Texto = "Historial de Ventas", Ruta = "/ventas/historial", Icono = "DocumentTextIcon" });
+            }
+            else
+            {
+                return Unauthorized(new { mensaje = "Rol no reconocido en el sistema base." });
+            }
+
+            return Ok(menu);
         }
     }
 }
