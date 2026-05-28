@@ -27,8 +27,12 @@ namespace ControlVentas.API.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
+            cliente.IdCliente = 0;
+
             _context.Clientes.Add(cliente);
             await _context.SaveChangesAsync();
+            
+            // Aquí 'cliente.IdCliente' ya se llenó mágicamente con el número que generó MySQL
             return Ok(new { mensaje = "Cliente registrado con éxito", cliente });
         }
 
