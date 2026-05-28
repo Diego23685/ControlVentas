@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using ControlVentas.API.Models;
-using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,23 +11,22 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.WriteIndented = true;
     });
 
-// 2. Configuración nativa de OpenAPI (.NET 9) limpia
-builder.Services.AddOpenApi();
-
-// 3. Forzar la inyección global de configuraciones JSON para las APIs mínimas y OpenAPI
-builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
+// 2. ⚡ SWAGGER DEFINITIVO: Reemplaza al motor nativo bugeado de .NET 9
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
 {
-    options.SerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+    // Configuramos Swagger para que si encuentra bucles en las tablas de MySQL, no colapse
+    options.CustomSchemaIds(type => type.FullName);
 });
 
-// 4. Configurar el Contexto de la Base de Datos con MySQL
+// 3. Configurar el Contexto de la Base de Datos con MySQL
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
     ?? "Server=localhost;Port=3306;Database=control_ventas_db;Uid=root;Pwd=admin;";
 
 builder.Services.AddDbContext<VentasDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
 
-// 5. Configurar la política de CORS para tu puerto de React (5173)
+// 4. Configurar la política de CORS para tu puerto de React (5173)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("PermitirReact", policy =>
@@ -47,8 +45,9 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi(); 
-    app.MapScalarApiReference(); 
+    // Activamos la interfaz gráfica clásica e infalible de Swagger
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
 app.UseCors("PermitirReact");

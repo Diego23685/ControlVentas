@@ -5,8 +5,10 @@ namespace ControlVentas.API.Dtos
     public class VentaCreateDto
     {
         public int IdCliente { get; set; }
-        public int IdMetodoPago { get; set; } // <-- ÚNICA ADICIÓN: Para amarrar el pago
-        public string TipoComprobante { get; set; } = null!; // "Factura", "Recibo"
+        public int IdUsuario { get; set; }     // <-- NUEVO: Cajero logueado en React
+        public int IdTurno { get; set; }       // <-- NUEVO: El turno que abrió el cajero
+        public int IdMetodoPago { get; set; }
+        public string TipoComprobante { get; set; } = null!; 
         public string NumComprobante { get; set; } = null!;
         public decimal Impuesto { get; set; }
         public decimal Total { get; set; }

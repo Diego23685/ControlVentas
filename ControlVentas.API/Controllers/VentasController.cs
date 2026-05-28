@@ -19,13 +19,10 @@ namespace ControlVentas.API.Controllers
             _context = context;
         }
 
-        // GET: api/Ventas
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var ventas = await _context.Ventas
-                .OrderByDescending(v => v.IdVenta)
-                .ToListAsync();
+            var ventas = await _context.Ventas.OrderByDescending(v => v.IdVenta).ToListAsync();
             return Ok(ventas);
         }
 
@@ -39,62 +36,97 @@ namespace ControlVentas.API.Controllers
                 return BadRequest(new { mensaje = "La venta debe incluir al menos un producto." });
             }
 
+            // ⚡ CORREGIDO: Comparamos contra true para verificar que el turno esté abierto
+            var turnoValido = await _context.Set<TurnosCaja>().AnyAsync(t => t.IdTurno == dto.IdTurno && t.Estado == true);
+            if (!turnoValido) return BadRequest(new { mensaje = "No se puede facturar porque este turno de caja está cerrado o no existe." });
+
             using var transaction = await _context.Database.BeginTransactionAsync();
 
             try
             {
-                // 1. Crear la cabecera de la Venta con tu DTO real
                 var nuevaVenta = new Venta
                 {
                     IdCliente = dto.IdCliente,
+                    IdUsuario = dto.IdUsuario,     
+                    IdTurno = dto.IdTurno,         
+                    NumFactura = dto.NumComprobante,
+                    FechaVenta = DateTime.Now,
+                    Subtotal = dto.Total - dto.Impuesto,
+                    Impuesto = dto.Impuesto,
+                    Descuento = dto.Detalles.Sum(d => d.Descuento),
                     Total = dto.Total,
-                    Impuesto = dto.Impuesto
+                    Estado = "PAGADA"
                 };
 
                 _context.Ventas.Add(nuevaVenta);
                 await _context.SaveChangesAsync(); 
 
-                // 2. Procesar cada producto del detalle y restar existencias del Kardex
                 foreach (var item in dto.Detalles)
                 {
                     var producto = await _context.Productos.FindAsync(item.IdProducto);
-                    
-                    if (producto == null)
-                    {
-                        return NotFound(new { mensaje = $"El producto con ID {item.IdProducto} no existe." });
-                    }
+                    if (producto == null) return NotFound(new { mensaje = $"El producto con ID {item.IdProducto} no existe." });
 
                     if (producto.StockActual < item.Cantidad)
                     {
                         return BadRequest(new { mensaje = $"Stock insuficiente para '{producto.NombreProducto}'. Disponible: {producto.StockActual}" });
                     }
 
-                    // Reducimos las existencias físicas reales
                     producto.StockActual -= item.Cantidad;
 
                     var detalle = new DetalleVenta
                     {
                         IdVenta = nuevaVenta.IdVenta,
                         IdProducto = item.IdProducto,
-                        Cantidad = item.Cantidad
+                        Cantidad = item.Cantidad,
+                        PrecioUnitario = item.PrecioVenta,
+                        DescuentoAplicado = item.Descuento
                     };
 
                     _context.DetalleVentas.Add(detalle);
+
+                    var kardex = new KardexInventario
+                    {
+                        IdProducto = item.IdProducto,
+                        TipoMovimiento = "SALIDA",
+                        Origen = "VENTA",
+                        IdReferencia = nuevaVenta.IdVenta,
+                        Cantidad = item.Cantidad,
+                        StockAnterior = producto.StockActual + item.Cantidad,
+                        StockPosterior = producto.StockActual,
+                        FechaMovimiento = DateTime.Now
+                    };
+                    _context.Set<KardexInventario>().Add(kardex);
                 }
+
+                var pagoVenta = new PagosVentum
+                {
+                    IdVenta = nuevaVenta.IdVenta,
+                    IdMetodo = dto.IdMetodoPago,
+                    MontoPagado = dto.Total // Ajustado según tu mapeo físico anterior
+                };
+                
+                try
+                {
+                    // Intentamos mapear de forma segura la propiedad de monto
+                    var propMonto = pagoVenta.GetType().GetProperties().FirstOrDefault(p => p.Name.ToLower().Contains("monto"));
+                    if (propMonto != null) propMonto.SetValue(pagoVenta, dto.Total);
+                }
+                catch {}
+
+                _context.PagosVenta.Add(pagoVenta);
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                return Ok(new { mensaje = "¡Venta y facturación procesada con éxito!", idVenta = nuevaVenta.IdVenta });
+                return Ok(new { mensaje = "¡Factura procesada y Kardex actualizado con éxito!", idVenta = nuevaVenta.IdVenta });
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return StatusCode(500, new { mensaje = "Error interno al procesar la facturación", error = ex.Message });
+                return StatusCode(500, new { mensaje = "Error crítico al procesar la transacción", error = ex.Message });
             }
         }
 
-        // GET: api/Ventas/reporte-factura/5
         [HttpGet("reporte-factura/{id}")]
         public async Task<IActionResult> GetReporteFactura(int id)
         {
@@ -103,81 +135,36 @@ namespace ControlVentas.API.Controllers
                 .Select(v => new
                 {
                     v.IdVenta,
+                    v.NumFactura,
                     v.Total,
                     v.Impuesto,
-                    // Devolvemos el tipo mapeado de forma dinámica
-                    MetodoPago = "Efectivo C$", 
-                    Cliente = _context.Clientes
-                        .Where(c => c.IdCliente == v.IdCliente)
-                        .Select(c => new { c.Nombres, c.Apellidos, c.NumDocumento })
-                        .FirstOrDefault(),
-                    Productos = _context.DetalleVentas
-                        .Where(d => d.IdVenta == v.IdVenta)
-                        .Select(d => new
-                        {
-                            d.IdProducto,
-                            d.Cantidad,
-                            NombreProducto = _context.Productos
-                                .Where(p => p.IdProducto == d.IdProducto)
-                                .Select(p => p.NombreProducto)
-                                .FirstOrDefault()
-                        }).ToList()
-                })
-                .FirstOrDefaultAsync();
+                    v.FechaVenta,
+                    Cliente = _context.Clientes.Where(c => c.IdCliente == v.IdCliente).Select(c => new { c.Nombres, c.Apellidos, c.NumDocumento }).FirstOrDefault(),
+                    Productos = _context.DetalleVentas.Where(d => d.IdVenta == v.IdVenta).Select(d => new { d.IdProducto, d.Cantidad, d.PrecioUnitario, NombreProducto = _context.Productos.Where(p => p.IdProducto == d.IdProducto).Select(p => p.NombreProducto).FirstOrDefault() }).ToList()
+                }).FirstOrDefaultAsync();
 
-            if (ventaReporte == null) 
-                return NotFound(new { mensaje = "Factura no encontrada para el reporte." });
-
+            if (ventaReporte == null) return NotFound(new { mensaje = "Factura no encontrada." });
             return Ok(ventaReporte);
         }
 
-        // GET: api/Ventas/reporte-maestro
         [HttpGet("reporte-maestro")]
         public async Task<IActionResult> GetReporteMasterDetalle([FromQuery] string periodo = "recientes")
         {
             var query = _context.Ventas.AsQueryable();
-
-            if (periodo.ToLower() == "recientes")
-            {
-                query = query.OrderByDescending(v => v.IdVenta).Take(20);
-            }
-            else
-            {
-                query = query.OrderByDescending(v => v.IdVenta);
-            }
+            if (periodo.ToLower() == "recientes") query = query.OrderByDescending(v => v.IdVenta).Take(20);
 
             var ventasConsolidadas = await query
                 .Select(v => new
                 {
                     v.IdVenta,
+                    v.NumFactura,
                     v.Total,
-                    v.Impuesto,
-                    MetodoPago = "Efectivo/Transferencia",
-                    Cliente = _context.Clientes
-                        .Where(c => c.IdCliente == v.IdCliente)
-                        .Select(c => $"{c.Nombres} {c.Apellidos}")
-                        .FirstOrDefault(),
-                    ArticulosVendidos = _context.DetalleVentas
-                        .Where(d => d.IdVenta == v.IdVenta)
-                        .Select(d => new
-                        {
-                            d.Cantidad,
-                            NombreProducto = _context.Productos
-                                .Where(p => p.IdProducto == d.IdProducto)
-                                .Select(p => p.NombreProducto)
-                                .FirstOrDefault()
-                        }).ToList()
+                    v.FechaVenta,
+                    Cliente = _context.Clientes.Where(c => c.IdCliente == v.IdCliente).Select(c => $"{c.Nombres} {c.Apellidos}").FirstOrDefault(),
+                    Cajero = _context.Set<Usuario>().Where(u => u.IdUsuario == v.IdUsuario).Select(u => u.Username).FirstOrDefault()
                 }).ToListAsync();
 
-            var totalGenerado = ventasConsolidadas.Sum(v => v.Total);
-
-            return Ok(new
-            {
-                FiltroPeriodo = periodo,
-                TotalGeneralVendido = totalGenerado,
-                CantidadVentas = ventasConsolidadas.Count,
-                Documentos = ventasConsolidadas
-            });
+            return Ok(new { FiltroPeriodo = periodo, TotalGeneralVendido = ventasConsolidadas.Sum(v => v.Total), CantidadVentas = ventasConsolidadas.Count, Documentos = ventasConsolidadas });
         }
     }
 }
