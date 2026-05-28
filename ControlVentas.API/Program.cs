@@ -12,7 +12,7 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.WriteIndented = true;
     });
 
-// 2. Configuración nativa de OpenAPI (.NET 9) limpia sin métodos que fallen
+// 2. Configuración nativa de OpenAPI (.NET 9) limpia
 builder.Services.AddOpenApi();
 
 // 3. Forzar la inyección global de configuraciones JSON para las APIs mínimas y OpenAPI

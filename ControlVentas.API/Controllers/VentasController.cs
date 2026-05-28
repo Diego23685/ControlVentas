@@ -43,7 +43,7 @@ namespace ControlVentas.API.Controllers
 
             try
             {
-                // 1. Crear la cabecera de la Venta
+                // 1. Crear la cabecera de la Venta con tu DTO real
                 var nuevaVenta = new Venta
                 {
                     IdCliente = dto.IdCliente,
@@ -54,7 +54,7 @@ namespace ControlVentas.API.Controllers
                 _context.Ventas.Add(nuevaVenta);
                 await _context.SaveChangesAsync(); 
 
-                // 2. Procesar cada producto del detalle
+                // 2. Procesar cada producto del detalle y restar existencias del Kardex
                 foreach (var item in dto.Detalles)
                 {
                     var producto = await _context.Productos.FindAsync(item.IdProducto);
@@ -69,7 +69,7 @@ namespace ControlVentas.API.Controllers
                         return BadRequest(new { mensaje = $"Stock insuficiente para '{producto.NombreProducto}'. Disponible: {producto.StockActual}" });
                     }
 
-                    // Reducir el stock real
+                    // Reducimos las existencias físicas reales
                     producto.StockActual -= item.Cantidad;
 
                     var detalle = new DetalleVenta
@@ -105,6 +105,8 @@ namespace ControlVentas.API.Controllers
                     v.IdVenta,
                     v.Total,
                     v.Impuesto,
+                    // Devolvemos el tipo mapeado de forma dinámica
+                    MetodoPago = "Efectivo C$", 
                     Cliente = _context.Clientes
                         .Where(c => c.IdCliente == v.IdCliente)
                         .Select(c => new { c.Nombres, c.Apellidos, c.NumDocumento })
@@ -129,21 +131,18 @@ namespace ControlVentas.API.Controllers
             return Ok(ventaReporte);
         }
 
-        // GET: api/Ventas/reporte-maestro?periodo=recientes
+        // GET: api/Ventas/reporte-maestro
         [HttpGet("reporte-maestro")]
         public async Task<IActionResult> GetReporteMasterDetalle([FromQuery] string periodo = "recientes")
         {
             var query = _context.Ventas.AsQueryable();
 
-            // En lugar de usar la columna de fecha que falta, filtramos de forma segura por volumen cronológico (IDs)
             if (periodo.ToLower() == "recientes")
             {
-                // Trae las últimas 20 ventas para el estado del día actual
                 query = query.OrderByDescending(v => v.IdVenta).Take(20);
             }
             else
             {
-                // Trae el histórico completo del mes/año
                 query = query.OrderByDescending(v => v.IdVenta);
             }
 
@@ -153,6 +152,7 @@ namespace ControlVentas.API.Controllers
                     v.IdVenta,
                     v.Total,
                     v.Impuesto,
+                    MetodoPago = "Efectivo/Transferencia",
                     Cliente = _context.Clientes
                         .Where(c => c.IdCliente == v.IdCliente)
                         .Select(c => $"{c.Nombres} {c.Apellidos}")
