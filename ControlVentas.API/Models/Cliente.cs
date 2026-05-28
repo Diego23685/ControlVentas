@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace ControlVentas.API.Models;
 
@@ -19,5 +20,6 @@ public partial class Cliente
 
     public string? Email { get; set; }
 
+    [JsonIgnore]
     public virtual ICollection<Venta> Venta { get; set; } = new List<Venta>();
 }
