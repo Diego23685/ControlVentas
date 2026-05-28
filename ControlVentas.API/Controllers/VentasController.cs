@@ -43,7 +43,7 @@ namespace ControlVentas.API.Controllers
 
             try
             {
-                // 1. Crear la cabecera de la Venta (Solo asignando los campos base universales)
+                // 1. Crear la cabecera de la Venta
                 var nuevaVenta = new Venta
                 {
                     IdCliente = dto.IdCliente,
@@ -51,8 +51,6 @@ namespace ControlVentas.API.Controllers
                     Impuesto = dto.Impuesto
                 };
 
-                // Si tus columnas de comprobante o fecha se llaman distinto, C# las ignorará por ahora
-                // para permitirte compilar y defender el flujo base.
                 _context.Ventas.Add(nuevaVenta);
                 await _context.SaveChangesAsync(); 
 
@@ -66,7 +64,6 @@ namespace ControlVentas.API.Controllers
                         return NotFound(new { mensaje = $"El producto con ID {item.IdProducto} no existe." });
                     }
 
-                    // Validación de inventario usando tu columna real 'StockActual'
                     if (producto.StockActual < item.Cantidad)
                     {
                         return BadRequest(new { mensaje = $"Stock insuficiente para '{producto.NombreProducto}'. Disponible: {producto.StockActual}" });
@@ -75,7 +72,6 @@ namespace ControlVentas.API.Controllers
                     // Reducir el stock real
                     producto.StockActual -= item.Cantidad;
 
-                    // Instanciamos el detalle usando la clase nativa
                     var detalle = new DetalleVenta
                     {
                         IdVenta = nuevaVenta.IdVenta,
@@ -83,8 +79,8 @@ namespace ControlVentas.API.Controllers
                         Cantidad = item.Cantidad
                     };
 
-                    // Corregido: Agregamos directo a la colección en plural de la base de datos (DetalleVentas)
-                    _context.Add(detalle);
+                    // Corregido para usar la propiedad real expuesta en tu DbContext
+                    _context.DetalleVentas.Add(detalle);
                 }
 
                 await _context.SaveChangesAsync();
@@ -97,6 +93,78 @@ namespace ControlVentas.API.Controllers
                 await transaction.RollbackAsync();
                 return StatusCode(500, new { mensaje = "Error interno al procesar la facturación", error = ex.Message });
             }
+        }
+
+        // GET: api/Ventas/reporte-factura/5
+        [HttpGet("reporte-factura/{id}")]
+        public async Task<IActionResult> GetReporteFactura(int id)
+        {
+            var ventaReporte = await _context.Ventas
+                .Where(v => v.IdVenta == id)
+                .Select(v => new
+                {
+                    v.IdVenta,
+                    v.Total,
+                    v.Impuesto,
+                    Cliente = _context.Clientes
+                        .Where(c => c.IdCliente == v.IdCliente)
+                        .Select(c => new { c.Nombres, c.Apellidos, c.NumDocumento })
+                        .FirstOrDefault(),
+                    Productos = _context.DetalleVentas // <-- CORREGIDO AQUÍ
+                        .Where(d => d.IdVenta == v.IdVenta)
+                        .Select(d => new
+                        {
+                            d.IdProducto,
+                            d.Cantidad,
+                            NombreProducto = _context.Productos
+                                .Where(p => p.IdProducto == d.IdProducto)
+                                .Select(p => p.NombreProducto)
+                                .FirstOrDefault()
+                        }).ToList()
+                })
+                .FirstOrDefaultAsync();
+
+            if (ventaReporte == null) 
+                return NotFound(new { mensaje = "Factura no encontrada para el reporte." });
+
+            return Ok(ventaReporte);
+        }
+
+        // GET: api/Ventas/reporte-maestro
+        [HttpGet("reporte-maestro")]
+        public async Task<IActionResult> GetReporteMasterDetalle([FromQuery] string periodo = "dia")
+        {
+            var ventasConsolidadas = await _context.Ventas
+                .Select(v => new
+                {
+                    v.IdVenta,
+                    v.Total,
+                    v.Impuesto,
+                    Cliente = _context.Clientes
+                        .Where(c => c.IdCliente == v.IdCliente)
+                        .Select(c => $"{c.Nombres} {c.Apellidos}")
+                        .FirstOrDefault(),
+                    ArticulosVendidos = _context.DetalleVentas // <-- CORREGIDO AQUÍ
+                        .Where(d => d.IdVenta == v.IdVenta)
+                        .Select(d => new
+                        {
+                            d.Cantidad,
+                            NombreProducto = _context.Productos
+                                .Where(p => p.IdProducto == d.IdProducto)
+                                .Select(p => p.NombreProducto)
+                                .FirstOrDefault()
+                        }).ToList()
+                }).ToListAsync();
+
+            var totalGenerado = ventasConsolidadas.Sum(v => v.Total);
+
+            return Ok(new
+            {
+                FiltroPeriodo = periodo,
+                TotalGeneralVendido = totalGenerado,
+                CantidadVentas = ventasConsolidadas.Count,
+                Documentos = ventasConsolidadas
+            });
         }
     }
 }
