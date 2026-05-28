@@ -139,5 +139,39 @@ namespace ControlVentas.API.Controllers
 
             return Ok(menu);
         }
+
+        // GET: api/auth/usuarios
+        // Satisface: Listar todos los usuarios registrados con su respectivo rol
+        [HttpGet("usuarios")]
+        public async Task<IActionResult> ListarUsuarios()
+        {
+            try
+            {
+                // Hacemos un JOIN implícito usando Linq para traer el nombre del Rol directo de la tabla Roles
+                var listaUsuarios = await _context.Usuarios
+                    .Select(u => new
+                    {
+                        u.IdUsuario,
+                        u.Username,
+                        u.Nombres,
+                        u.Apellidos,
+                        u.Email,
+                        u.Estado,
+                        IdRol = u.IdRol,
+                        // Buscamos el nombre del rol real en tu MySQL
+                        NombreRol = _context.Roles
+                            .Where(r => r.IdRol == u.IdRol)
+                            .Select(r => r.NombreRol)
+                            .FirstOrDefault() ?? "Sin Rol"
+                    })
+                    .ToListAsync();
+
+                return Ok(listaUsuarios);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { mensaje = "Error al obtener la lista de usuarios", error = ex.Message });
+            }
+        }
     }
 }
