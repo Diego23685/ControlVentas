@@ -79,7 +79,6 @@ namespace ControlVentas.API.Controllers
                         Cantidad = item.Cantidad
                     };
 
-                    // Corregido para usar la propiedad real expuesta en tu DbContext
                     _context.DetalleVentas.Add(detalle);
                 }
 
@@ -110,7 +109,7 @@ namespace ControlVentas.API.Controllers
                         .Where(c => c.IdCliente == v.IdCliente)
                         .Select(c => new { c.Nombres, c.Apellidos, c.NumDocumento })
                         .FirstOrDefault(),
-                    Productos = _context.DetalleVentas // <-- CORREGIDO AQUÍ
+                    Productos = _context.DetalleVentas
                         .Where(d => d.IdVenta == v.IdVenta)
                         .Select(d => new
                         {
@@ -130,11 +129,25 @@ namespace ControlVentas.API.Controllers
             return Ok(ventaReporte);
         }
 
-        // GET: api/Ventas/reporte-maestro
+        // GET: api/Ventas/reporte-maestro?periodo=recientes
         [HttpGet("reporte-maestro")]
-        public async Task<IActionResult> GetReporteMasterDetalle([FromQuery] string periodo = "dia")
+        public async Task<IActionResult> GetReporteMasterDetalle([FromQuery] string periodo = "recientes")
         {
-            var ventasConsolidadas = await _context.Ventas
+            var query = _context.Ventas.AsQueryable();
+
+            // En lugar de usar la columna de fecha que falta, filtramos de forma segura por volumen cronológico (IDs)
+            if (periodo.ToLower() == "recientes")
+            {
+                // Trae las últimas 20 ventas para el estado del día actual
+                query = query.OrderByDescending(v => v.IdVenta).Take(20);
+            }
+            else
+            {
+                // Trae el histórico completo del mes/año
+                query = query.OrderByDescending(v => v.IdVenta);
+            }
+
+            var ventasConsolidadas = await query
                 .Select(v => new
                 {
                     v.IdVenta,
@@ -144,7 +157,7 @@ namespace ControlVentas.API.Controllers
                         .Where(c => c.IdCliente == v.IdCliente)
                         .Select(c => $"{c.Nombres} {c.Apellidos}")
                         .FirstOrDefault(),
-                    ArticulosVendidos = _context.DetalleVentas // <-- CORREGIDO AQUÍ
+                    ArticulosVendidos = _context.DetalleVentas
                         .Where(d => d.IdVenta == v.IdVenta)
                         .Select(d => new
                         {
