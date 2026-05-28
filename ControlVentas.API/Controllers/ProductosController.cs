@@ -52,5 +52,19 @@ namespace ControlVentas.API.Controllers
             await _context.SaveChangesAsync();
             return Ok(new { mensaje = "Producto actualizado con éxito" });
         }
+
+        // DELETE: api/Productos/5 (Borrado lógico para proteger el historial)
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var producto = await _context.Productos.FindAsync(id);
+            if (producto == null) return NotFound(new { mensaje = "Producto no encontrado" });
+
+            // Cambiamos el estado a falso para desactivarlo
+            producto.Estado = false;
+            
+            await _context.SaveChangesAsync();
+            return Ok(new { mensaje = "Producto desactivado con éxito" });
+        }
     }
 }

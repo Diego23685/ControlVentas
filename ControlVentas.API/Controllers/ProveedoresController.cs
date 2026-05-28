@@ -49,5 +49,18 @@ namespace ControlVentas.API.Controllers
             await _context.SaveChangesAsync();
             return Ok(new { mensaje = "Proveedor actualizado con éxito" });
         }
+
+        // DELETE: api/Proveedores/5 (Borrado lógico)
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var proveedor = await _context.Proveedores.FindAsync(id);
+            if (proveedor == null) return NotFound(new { mensaje = "Proveedor no encontrado" });
+
+            proveedor.Estado = false;
+
+            await _context.SaveChangesAsync();
+            return Ok(new { mensaje = "Proveedor desactivado con éxito" });
+        }
     }
 }

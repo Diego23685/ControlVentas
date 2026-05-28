@@ -48,5 +48,25 @@ namespace ControlVentas.API.Controllers
             await _context.SaveChangesAsync();
             return Ok(new { mensaje = "Cliente actualizado con éxito" });
         }
+
+        // DELETE: api/Clientes/5
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var cliente = await _context.Clientes.FindAsync(id);
+            if (cliente == null) return NotFound(new { mensaje = "Cliente no encontrado" });
+
+            try
+            {
+                _context.Clientes.Remove(cliente);
+                await _context.SaveChangesAsync();
+                return Ok(new { mensaje = "Cliente eliminado con éxito" });
+            }
+            catch (Exception)
+            {
+                // Si el cliente ya tiene ventas, MySQL impedirá el borrado físico
+                return BadRequest(new { mensaje = "No se puede eliminar el cliente porque tiene un historial de ventas asociado." });
+            }
+        }
     }
 }
