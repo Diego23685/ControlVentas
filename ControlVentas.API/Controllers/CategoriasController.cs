@@ -32,16 +32,30 @@ namespace ControlVentas.API.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            // Forzamos el autoincrementable asegurando que el ID vaya en 0
-            categoria.IdCategoria = 0;
-            
-            // Por defecto, toda categoría nueva entra activa
-            if (categoria.Estado == null) categoria.Estado = true;
+            try
+            {
+                // Forzamos el autoincrementable asegurando que el ID vaya en 0
+                categoria.IdCategoria = 0;
+                
+                // Por defecto, toda categoría nueva entra activa
+                if (categoria.Estado == null) categoria.Estado = true;
 
-            _context.Categorias.Add(categoria);
-            await _context.SaveChangesAsync();
-            
-            return Ok(new { mensaje = "Categoría registrada con éxito", categoria });
+                _context.Categorias.Add(categoria);
+                await _context.SaveChangesAsync();
+                
+                return Ok(new { mensaje = "Categoría registrada con éxito", categoria });
+            }
+            catch (DbUpdateException ex)
+            {
+                // Capturamos el error de entrada duplicada de MySQL en el campo único
+                if (ex.InnerException != null && ex.InnerException.Message.Contains("Duplicate entry"))
+                {
+                    return BadRequest(new { mensaje = $"La categoría '{categoria.NombreCategoria}' ya se encuentra registrada en el sistema." });
+                }
+
+                // Cualquier otro error de persistencia
+                return StatusCode(500, new { mensaje = "Error interno al procesar el guardado de la categoría." });
+            }
         }
 
         // PUT: api/Categorias/5 (Editar nombre o descripción)

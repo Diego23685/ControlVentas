@@ -36,7 +36,6 @@ namespace ControlVentas.API.Controllers
                 return BadRequest(new { mensaje = "La venta debe incluir al menos un producto." });
             }
 
-            // ⚡ CORREGIDO: Comparamos contra true para verificar que el turno esté abierto
             var turnoValido = await _context.Set<TurnosCaja>().AnyAsync(t => t.IdTurno == dto.IdTurno && t.Estado == true);
             if (!turnoValido) return BadRequest(new { mensaje = "No se puede facturar porque este turno de caja está cerrado o no existe." });
 

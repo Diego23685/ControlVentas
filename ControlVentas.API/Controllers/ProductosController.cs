@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ControlVentas.API.Models;
+using System;
+using System.Threading.Tasks;
 
 namespace ControlVentas.API.Controllers
 {
@@ -15,21 +17,40 @@ namespace ControlVentas.API.Controllers
             _context = context;
         }
 
+        // GET: api/Productos (Corregido para respetar el borrado lógico)
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var productos = await _context.Productos.ToListAsync();
+            var productos = await _context.Productos
+                .Where(p => p.Estado == true || p.Estado == null)
+                .ToListAsync();
+
             return Ok(productos);
         }
 
+        // POST: api/Productos
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] Producto producto)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
             
-            _context.Productos.Add(producto);
-            await _context.SaveChangesAsync();
-            return Ok(new { mensaje = "Producto registrado con éxito", producto });
+            try
+            {
+                // Forzamos el ID en cero para que MySQL asigne el AutoIncrement de forma transparente
+                producto.IdProducto = 0;
+
+                // Anulamos las navegaciones pesadas por seguridad antes de almacenar en la base de datos
+                producto.IdCategoriaNavigation = null;
+                producto.IdMarcaNavigation = null;
+
+                _context.Productos.Add(producto);
+                await _context.SaveChangesAsync();
+                return Ok(new { mensaje = "Producto registrado con éxito", producto });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { mensaje = "Error crítico de persistencia en MySQL: " + ex.InnerException?.Message });
+            }
         }
 
         [HttpPut("{id}")]

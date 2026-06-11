@@ -63,7 +63,7 @@ namespace ControlVentas.API.Controllers
                             .Where(p => p.IdProducto == d.IdProducto)
                             .Select(p => p.IdCategoria)
                             .FirstOrDefault()))
-                        .Select(c => c.NombreCategoria) // Ajusta si en tu tabla es 'Nombre'
+                        .Select(c => c.NombreCategoria) 
                         .FirstOrDefault()
                 })
                 .ToListAsync();
@@ -78,48 +78,68 @@ namespace ControlVentas.API.Controllers
         }
 
         // GET: api/reportes/estadisticos-dashboard
-        // Satisface: Reportes estadísticos avanzados (Top Productos y Totales por Categoría)
+        // Satisface: Reportes estadísticos avanzados adaptados al dashboard en React
         [HttpGet("estadisticos-dashboard")]
         public async Task<IActionResult> GetEstadisticosDashboard()
         {
-            // 1. Top 5 Productos más vendidos (Ideal para gráficas de barras en React)
-            var topProductos = await _context.DetalleVentas
-                .GroupBy(d => d.IdProducto)
-                .Select(g => new
-                {
-                    IdProducto = g.Key,
-                    TotalVendido = g.Sum(d => d.Cantidad),
-                    NombreProducto = _context.Productos
-                        .Where(p => p.IdProducto == g.Key)
-                        .Select(p => p.NombreProducto)
-                        .FirstOrDefault()
-                })
-                .OrderByDescending(p => p.TotalVendido)
-                .Take(5)
-                .ToListAsync();
-
-            // 2. Cantidad de productos en stock por debajo del mínimo (Alertas Operativas)
-            var alertasStock = await _context.Productos
-                .Where(p => p.StockActual <= p.StockMinimo)
-                .Select(p => new { p.IdProducto, p.NombreProducto, p.StockActual, p.StockMinimo })
-                .ToListAsync();
-
-            // 3. Resumen macro financiero
-            var totalVentasContadas = await _context.Ventas.SumAsync(v => v.Total);
-            var cantidadClientesActivos = await _context.Clientes.CountAsync();
-
-            return Ok(new
+            try
             {
-                ResumenFinanciero = new {
-                    TotalRecaudado = totalVentasContadas,
-                    ClientesRegistrados = cantidadClientesActivos
-                },
-                TopProductosMasVendidos = topProductos,
-                AlertasDeInventario = new {
-                    CantidadCriticos = alertasStock.Count,
-                    ProductosAgotados = alertasStock
+                // Fecha de hoy para las ventas del día
+                DateTime hoy = DateTime.Today;
+
+                // 1. INGRESOS DEL DÍA (Suma de la columna 'total' de las ventas del día de hoy)
+                decimal totalVentasDia = await _context.Ventas
+                    .Where(v => v.FechaVenta.Date == hoy && v.Estado == "PAGADA")
+                    .SumAsync(v => v.Total);
+
+                // 2. TRANSACCIONES (Cantidad de facturas emitidas el día de hoy)
+                int facturasEmitidas = await _context.Ventas
+                    .CountAsync(v => v.FechaVenta.Date == hoy);
+
+                // 3. PRODUCTO ESTRELLA (El repuesto con mayor cantidad total acumulada en 'detalle_ventas')
+                var productoEstrellaQuery = await _context.DetalleVentas
+                    .GroupBy(d => d.IdProducto)
+                    .Select(g => new 
+                    { 
+                        IdProducto = g.Key, 
+                        TotalCantidad = g.Sum(x => x.Cantidad) 
+                    })
+                    .OrderByDescending(x => x.TotalCantidad)
+                    .FirstOrDefaultAsync();
+
+                string productoEstrella = "Sin ventas registradas";
+                if (productoEstrellaQuery != null)
+                {
+                    productoEstrella = await _context.Productos
+                        .Where(p => p.IdProducto == productoEstrellaQuery.IdProducto)
+                        .Select(p => p.NombreProducto)
+                        .FirstOrDefaultAsync() ?? "Sin ventas registradas";
                 }
-            });
+
+                // 4. ALERTAS DE INVENTARIO (Mapeado exacto con camelCase que espera React)
+                // Trae los repuestos activos cuyo stock actual está por debajo o igual al mínimo
+                var productosCriticos = await _context.Productos
+                    .Where(p => p.Estado == true && p.StockActual <= p.StockMinimo)
+                    .Select(p => new 
+                    { 
+                        idProducto = p.IdProducto, 
+                        nombreProducto = p.NombreProducto, 
+                        stockActual = p.StockActual 
+                    })
+                    .ToListAsync();
+
+                return Ok(new
+                {
+                    totalVentasDia,
+                    facturasEmitidas,
+                    productoEstrella,
+                    productosCriticos
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { mensaje = "Error crítico al compilar métricas reales: " + ex.Message });
+            }
         }
     }
 }

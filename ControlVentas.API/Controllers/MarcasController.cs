@@ -31,12 +31,26 @@ namespace ControlVentas.API.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            // Aseguramos el autoincrementable obligando al ID a ir en 0
-            marca.IdMarca = 0;
+            try
+            {
+                // Aseguramos el autoincrementable obligando al ID a ir en 0
+                marca.IdMarca = 0;
 
-            _context.Marcas.Add(marca);
-            await _context.SaveChangesAsync();
-            return Ok(new { mensaje = "Marca registrada con éxito", marca });
+                _context.Marcas.Add(marca);
+                await _context.SaveChangesAsync();
+                return Ok(new { mensaje = "Marca registrada con éxito", marca });
+            }
+            catch (DbUpdateException ex)
+            {
+                // Capturamos el error de entrada duplicada de MySQL (uq_nombre_marca)
+                if (ex.InnerException != null && ex.InnerException.Message.Contains("Duplicate entry"))
+                {
+                    return BadRequest(new { mensaje = $"La marca '{marca.NombreMarca}' ya se encuentra registrada en el sistema." });
+                }
+                
+                // Cualquier otro error de persistencia
+                return StatusCode(500, new { mensaje = "Error interno al procesar el guardado de la marca." });
+            }
         }
 
         // PUT: api/Marcas/5 (Editar nombre de la marca)
