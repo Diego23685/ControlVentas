@@ -1,4 +1,4 @@
-# Sistema POS y Control de Inventario para Repuestos
+# Sistema POS y Control de Inventario para Tiendas
 
 Este proyecto es una solución full-stack maestro-detalle diseñada para la gestión contable, facturación electrónica en tiempo real, arqueo de turnos de caja y control de inventario de repuestos. Desarrollado como parte del **Proyecto Integrador I** en la **UNAN-León**.
 
